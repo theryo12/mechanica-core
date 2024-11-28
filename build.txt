@@ -1,0 +1,3 @@
+displayName = Mechanica: Core
+author = ryo
+version = 0.1

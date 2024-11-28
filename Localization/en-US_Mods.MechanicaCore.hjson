@@ -1,0 +1,12 @@
+Configs: {
+	QuestsConfig: {
+		DisplayName: Quests Config
+
+		ToggleQuestScreen: {
+			Label: Toggle Quest Screen
+			Tooltip: ""
+		}
+	}
+}
+
+Keybinds.QuestMenuToggle.DisplayName: Quest Menu Toggle
