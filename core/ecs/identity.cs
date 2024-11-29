@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: MIT
-
 using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
@@ -49,7 +47,7 @@ public readonly struct Identity : IEquatable<Identity>, IComparable<Identity>
   /// Constructs an identity directly from a raw 64-bit value.
   /// </summary>
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  private Identity(ulong value) => _value = value;
+  public Identity(ulong value) => _value = value;
 
   #endregion
 
