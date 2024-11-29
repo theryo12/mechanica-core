@@ -6,6 +6,7 @@ using System.Reflection;
 using log4net.Repository.Hierarchy;
 using MechanicaCore.Core.ECS;
 using MechanicaCore.Core.ECS.Components;
+using MechanicaCore.Core.ECS.Managers;
 using MechanicaCore.Core.ECS.Systems;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -19,6 +20,7 @@ namespace MechanicaCore
 	public class MechanicaCore : Mod
 	{
 		public static SystemManager SystemManager { get; private set; }
+		public static EntityUpdateScheduler EntityUpdateScheduler { get; private set; }
 
 		public override void Load()
 		{
@@ -26,11 +28,16 @@ namespace MechanicaCore
 
 			SystemManager = new();
 			SystemManager.AddSystems(this);
+
+			EntityUpdateScheduler = new();
 		}
 
 		public override void Unload()
 		{
 			SystemManager = null;
+
+			EntityUpdateScheduler = null;
+
 			Logger.Info("Goodbye, Mechanica World!");
 		}
 	}
@@ -62,6 +69,17 @@ namespace MechanicaCore
 		public override void PostUpdateWorld()
 		{
 			MechanicaCore.SystemManager.UpdateAll(new GameTime());
+		}
+
+		public override void OnWorldLoad()
+		{
+			var entityManager = EntityManager.Instance;
+			var entity = entityManager.CreateEntity();
+			entity.Components =
+			[
+				new TransformComponent(new Vector2(Main.spawnTileX * 16, Main.spawnTileY * 16), new Vector2(64, 64)),
+				new DebugComponent("TestEntity", Color.Red)
+			];
 		}
 	}
 }
