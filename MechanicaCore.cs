@@ -1,3 +1,5 @@
+using System.Linq;
+using MechanicaCore.Core.ECS;
 using Terraria.ModLoader;
 
 namespace MechanicaCore
@@ -9,9 +11,16 @@ namespace MechanicaCore
 			Logger.Info("Hello, Mechanica World!");
 		}
 
+
+
 		public override void Unload()
 		{
 			Logger.Info("Goodbye, Mechanica World!");
 		}
+	}
+
+	public partial class MechanicaCoreSystem : ModSystem
+	{
+
 	}
 }
