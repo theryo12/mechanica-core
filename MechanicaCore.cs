@@ -1,8 +1,12 @@
+using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Reflection;
 using log4net.Repository.Hierarchy;
 using MechanicaCore.Core.ECS;
 using MechanicaCore.Core.ECS.Components;
+using MechanicaCore.Core.ECS.Systems;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Terraria;
@@ -14,24 +18,28 @@ namespace MechanicaCore
 {
 	public class MechanicaCore : Mod
 	{
+		public static SystemManager SystemManager { get; private set; }
+
 		public override void Load()
 		{
 			Logger.Info("Hello, Mechanica World!");
+
+			SystemManager = new();
+			SystemManager.AddSystems(this);
 		}
-
-
 
 		public override void Unload()
 		{
+			SystemManager = null;
 			Logger.Info("Goodbye, Mechanica World!");
 		}
 	}
 
 	public class MechanicaCoreSystem : ModSystem
 	{
-		private void DrawEntityDebug(SpriteBatch spriteBatch)
+		private void DrawEntities(SpriteBatch spriteBatch)
 		{
-			EntityManager.Instance.DrawDebug(spriteBatch, FontAssets.MouseText.Value, Mod);
+			MechanicaCore.SystemManager.DrawAll(spriteBatch);
 		}
 
 		public override void ModifyInterfaceLayers(List<GameInterfaceLayer> layers)
@@ -40,15 +48,20 @@ namespace MechanicaCore
 			if (mouseTextIndex != -1)
 			{
 				layers.Insert(mouseTextIndex, new LegacyGameInterfaceLayer(
-					"MechanicaCore: ECSDebug",
+					"MechanicaCore: ECS",
 					delegate
 					{
-						DrawEntityDebug(Main.spriteBatch);
+						DrawEntities(Main.spriteBatch);
 						return true;
 					},
 					InterfaceScaleType.Game)
 				);
 			}
+		}
+
+		public override void PostUpdateWorld()
+		{
+			MechanicaCore.SystemManager.UpdateAll(new GameTime());
 		}
 
 		public override void OnWorldLoad()
@@ -58,11 +71,9 @@ namespace MechanicaCore
 			var entity = entityManager.CreateEntity();
 			entity.Components =
 			[
-				new TransformComponent(Vector2.Zero, new Vector2(1000, 1000)),
+				new TransformComponent(new Vector2(Main.spawnTileX * 16, Main.spawnTileY * 16), new Vector2(1000, 1000)),
 				new DebugComponent("TestEntity", Color.Red)
 			];
-
-			entityManager.UpdateEntityKey(entity);
 		}
 	}
 }

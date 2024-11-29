@@ -1,3 +1,4 @@
+using System.IO;
 using Microsoft.Xna.Framework;
 
 namespace MechanicaCore.Core.ECS.Components
@@ -13,4 +14,5 @@ namespace MechanicaCore.Core.ECS.Components
       Size = size;
     }
   }
+
 }

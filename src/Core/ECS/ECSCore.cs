@@ -1,393 +1,401 @@
+// i hope this system works well and it was worth it.
+// - ryo
+
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
-using System.Runtime.CompilerServices;
-using MechanicaCore.Core.ECS.Components;
+using System.Reflection;
 using MechanicaCore.Utilities;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
-using ReLogic.Graphics;
-using Terraria;
-using Terraria.GameContent;
 using Terraria.ModLoader;
 
 namespace MechanicaCore.Core.ECS
 {
   /// <summary>
-  /// Represents a data-only component used to store state and attributes of an entity.
-  /// Components are the building blocks of the ECS system, containing only data 
-  /// without logic, making entities modular and reusable.
+  /// Represents a data-only component storing state and attributes of an entity.
+  /// Components are modular and contain only data with no associated logic.
+  /// They are the building blocks of the Entity Component System (ECS).
   /// </summary>
   public interface IComponent { }
 
   /// <summary>
-  /// Defines an entity that manages a collection of components.
-  /// Entities are containers that aggregate components to define behavior and data.
-  /// This interface provides methods for adding, retrieving, and removing components.
+  /// Represents a container for components, defining data and behavior.
+  /// Entities in the ECS pattern are modular, combining components dynamically.
   /// </summary>
   public interface IEntity
   {
     /// <summary>
-    /// Adds a component to the entity, replacing any existing component of the same type.
+    /// Adds or replaces a component of type <typeparamref name="T"/>.
     /// </summary>
-    /// <typeparam name="T">The type of the component.</typeparam>
-    /// <param name="component">The instance of the component to add.</param>
+    /// <typeparam name="T">The type of component to add or replace.</typeparam>
+    /// <param name="component">The component instance to associate with the entity.</param>
     void AddComponent<T>(T component) where T : IComponent;
 
     /// <summary>
-    /// Retrieves a specific component from the entity, if it exists.
+    /// Retrieves a component of the specified type, or <c>null</c> if not present.
     /// </summary>
     /// <typeparam name="T">The type of the component.</typeparam>
-    /// <returns>The component instance, or <c>null</c> if not present.</returns>
+    /// <returns>The retrieved component, or <c>null</c> if it does not exist.</returns>
     T? GetComponent<T>() where T : IComponent;
 
     /// <summary>
-    /// Retrieves the types of all components currently associated with the entity.
+    /// Gets a component by its type.
     /// </summary>
-    /// <returns>An enumerable collection of component types.</returns>
+    /// <param name="componentType">The type of component to retrieve.</param>
+    /// <returns>The component instance, or <c>null</c> if it does not exist.</returns>
+    IComponent? GetComponent(Type componentType);
+
+    /// <summary>
+    /// Enumerates all types of components currently associated with the entity.
+    /// </summary>
+    /// <returns>An enumeration of component types.</returns>
     IEnumerable<Type> GetComponents();
 
     /// <summary>
-    /// Removes a specific component from the entity, if it exists.
+    /// Removes a component of the specified type.
     /// </summary>
     /// <typeparam name="T">The type of the component to remove.</typeparam>
     void RemoveComponent<T>() where T : IComponent;
 
     /// <summary>
-    /// Gets or sets all components of the entity in bulk.
-    /// Replacing components will overwrite the current set of components.
+    /// Replaces the entity's components in bulk.
     /// </summary>
     IEnumerable<IComponent> Components { get; set; }
   }
 
   /// <summary>
-  /// Represents a system that operates on entities containing specific components.
-  /// Systems encapsulate logic for processing entities in the ECS framework.
-  /// </summary>
-  public interface ISystem
-  {
-    void Update(GameTime gameTime);
-  }
-
-  /// <summary>
-  /// Represents a component that supports serialization and deserialization
-  /// for network communication. This enables synchronization of component states
-  /// across the server and clients in multiplayer environments.
+  /// A component capable of serialization/deserialization for networking.
+  /// Ensures synchronization across server-client environments.
   /// </summary>
   public interface INetSerializableComponent : IComponent
   {
     /// <summary>
-    /// Serializes the component's state into a binary stream.
-    /// Use this method to write all required fields for reconstructing the component
-    /// during deserialization. This is typically used when sending data to clients.
+    /// Serializes the component's state into a binary stream for network transmission.
     /// </summary>
-    /// <param name="writer">A <see cref="BinaryWriter"/> used to write the component's data.</param>
+    /// <param name="writer">A binary writer to write the component's state.</param>
     void Serialize(BinaryWriter writer);
 
     /// <summary>
-    /// Deserializes the component's state from a binary stream.
-    /// Use this method to restore the component's state using data received over the network.
-    /// Ensure the deserialization order matches the serialization logic.
+    /// Restores the component's state from a binary stream.
     /// </summary>
-    /// <param name="reader">A <see cref="BinaryReader"/> used to read the component's data.</param>
+    /// <param name="reader">A binary reader to read the component's state.</param>
     void Deserialize(BinaryReader reader);
+
+    event Action<IEntity> OnComponentsChanged;
   }
 
+  /// <summary>
+  /// Represents a system that operates on entities matchin certain component requirments.
+  /// Each system encapsulates logic for a specific domain (e.g., transform, debug)
+  /// </summary>
+  public interface ISystem
+  {
+    void Update(GameTime gameTime);
+
+    void Draw(SpriteBatch spriteBatch);
+  }
 
   /// <summary>
-  /// Represents a basic entity implementation in the ECS system.
-  /// Entities are containers for components, defining their data and behavior.
+  /// Represents a base system class, automatically managing matching entities.
+  /// Derived systems define their behavior by overriding <see cref="Update"/> or <see cref="Draw"/>
+  /// </summary>
+  public abstract class SystemBase(params Type[] requiredComponents) : ISystem
+  {
+    private readonly List<IEntity> _matchingEntities = [];
+    private readonly HashSet<Type> _requiredComponents = [.. requiredComponents];
+
+    /// <summary>
+    /// Updates the list of entities matching this system's requirements.
+    /// </summary>
+    /// <param name="entityManager">The entity manager providing entities to evaluate.</param>
+    public void Refresh(EntityManager entityManager)
+    {
+      _matchingEntities.Clear();
+      foreach (var entity in entityManager.Entities)
+      {
+        if (_requiredComponents.All(c => entity.GetComponent(c) != null))
+        {
+          _matchingEntities.Add(entity);
+        }
+      }
+    }
+
+    public void OnEntityChanged(IEntity entity)
+    {
+      if (_requiredComponents.All(c => entity.GetComponent(c) != null))
+      {
+        if (!_matchingEntities.Contains(entity))
+          _matchingEntities.Add(entity);
+      }
+      else
+      {
+        _matchingEntities.Remove(entity);
+      }
+    }
+
+    /// <summary>
+    /// Gets the entities managed by this system.
+    /// </summary>
+    protected IReadOnlyList<IEntity> Entities => _matchingEntities;
+
+    public abstract void Update(GameTime gameTime);
+    public virtual void Draw(SpriteBatch spriteBatch) { }
+  }
+
+  /// <summary>
+  /// Manages all systems, delegating updates and drawing to each system.
+  /// </summary>
+  public class SystemManager
+  {
+    private readonly List<ISystem> _systems = [];
+
+    public SystemManager()
+    {
+      EntityManager.Instance.OnEntityChanged += HandleEntityChange;
+    }
+
+    /// <summary>
+    /// Automatically adds every system to SystemManager.
+    /// </summary>
+    public void AddSystems(Mod mod)
+    {
+      var systemTypes = Assembly.GetExecutingAssembly()
+          .GetTypes()
+          .Where(t => typeof(SystemBase).IsAssignableFrom(t) && !t.IsAbstract);
+
+      foreach (var systemType in systemTypes)
+      {
+        var systemInstance = (ISystem)Activator.CreateInstance(systemType);
+        AddSystem(systemInstance);
+        mod.Logger.Info($"Added system: {systemType.Name}");
+      }
+    }
+
+    public void AddSystem(ISystem system)
+    {
+      _systems.Add(system);
+      if (system is SystemBase baseSystem)
+        baseSystem.Refresh(EntityManager.Instance);
+    }
+
+    public void UpdateAll(GameTime gameTime)
+    {
+      foreach (var system in _systems)
+        system.Update(gameTime);
+    }
+
+    public void DrawAll(SpriteBatch spriteBatch)
+    {
+      foreach (var system in _systems)
+        system.Draw(spriteBatch);
+    }
+
+    private void HandleEntityChange(IEntity entity)
+    {
+      foreach (var system in _systems.OfType<SystemBase>())
+        system.OnEntityChanged(entity);
+    }
+  }
+
+  /// <summary>
+  /// Represents a fundamental implementation of the <see cref="IEntity"/> interface.
+  /// Manages a dynamic collection of components.
   /// </summary>
   public class Entity : IEntity
   {
-    // stores components using their type as the key for quick lookup
     private readonly Dictionary<Type, object> _components = [];
 
-    /// <inheritdoc/>
+    /// <inheritdoc />
     public IEnumerable<IComponent> Components
     {
       get => _components.Values.Cast<IComponent>();
       set
       {
         _components.Clear();
-
         foreach (var component in value)
         {
           var componentType = component.GetType();
           _components[componentType] = component;
+          NotifyChanges();
         }
       }
     }
 
-    /// <inheritdoc/>
+    public event Action<IEntity>? OnComponentsChanged;
+
+    /// <inheritdoc />
     public void AddComponent<T>(T component) where T : IComponent
     {
       SafeCheck.EnsureNotNull(component, nameof(component));
-
       _components[typeof(T)] = component;
+      NotifyChanges();
     }
 
-    /// <inheritdoc/>
+    /// <inheritdoc />
     public T? GetComponent<T>() where T : IComponent
     {
-      if (_components.TryGetValue(typeof(T), out var component))
-        return (T)component;
-
-      return default;
+      return _components.TryGetValue(typeof(T), out var component) ? (T)component : default;
     }
 
-    /// <inheritdoc/>
-    public IEnumerable<Type> GetComponents()
+    /// <inheritdoc />
+    public IComponent? GetComponent(Type componentType)
     {
-      return _components.Keys;
+      return _components.TryGetValue(componentType, out var component) ? (IComponent)component : null;
     }
 
-    /// <inheritdoc/>
+    /// <inheritdoc />
+    public IEnumerable<Type> GetComponents() => _components.Keys;
+
+    /// <inheritdoc />
     public void RemoveComponent<T>() where T : IComponent
     {
       _components.Remove(typeof(T));
+      NotifyChanges();
+    }
+
+    private void NotifyChanges()
+    {
+      OnComponentsChanged?.Invoke(this);
     }
   }
 
   /// <summary>
-  /// Represents a unique identifier for a set of components.
-  /// This structure is used to efficiently group and query entities
-  /// with specific combinations of components.
+  /// Represents a unique identifier for a set of components, optimized for fast lookups.
   /// </summary>
-  public struct ComponentKey : IEquatable<ComponentKey>
+  public readonly struct ComponentKey : IEquatable<ComponentKey>
   {
-    private static readonly Dictionary<Type, int> _typeToBitMap = [];
-    private static int _currentBitIndex = 0;
-
-    // the actual bitmask data
+    private const int MaxComponentTypes = 256; // limit to 256 types for performance
+    private static readonly ConcurrentDictionary<Type, int> TypeToBitIndex = new();
+    private static int _currentBitIndex;
     private readonly ulong[] _bitMask;
 
-    private ComponentKey(ulong[] bitMask)
-    {
-      _bitMask = bitMask;
-    }
+    private ComponentKey(ulong[] bitMask) => _bitMask = bitMask;
 
     /// <summary>
-    /// Creates a unique <see cref="ComponentKey"/> for the specified component types.
+    /// Generates a <see cref="ComponentKey"/> for the specified component types.
     /// </summary>
-    /// <param name="types">The types of components to include in the key.</param>
-    /// <returns>A <see cref="ComponentKey"/> representing the specified components.</returns>
+    /// <param name="types">The types of components to include.</param>
+    /// <returns>A <see cref="ComponentKey"/> representing the components.</returns>
     public static ComponentKey FromTypes(IEnumerable<Type> types)
     {
-      var bitMask = new ulong[4]; // up to 256 component types
-
+      var bitMask = new ulong[(MaxComponentTypes + 63) / 64];
       foreach (var type in types)
       {
-        if (!_typeToBitMap.TryGetValue(type, out var bitIndex))
-        {
-          bitIndex = _currentBitIndex++;
-          _typeToBitMap[type] = bitIndex;
-        }
-
+        var bitIndex = TypeToBitIndex.GetOrAdd(type, _ => _currentBitIndex++);
         var maskIndex = bitIndex / 64;
         var bitPosition = bitIndex % 64;
         bitMask[maskIndex] |= 1UL << bitPosition;
       }
-
       return new ComponentKey(bitMask);
     }
 
-    /// <summary>
-    /// Determines if this key contains the specified component type.
-    /// </summary>
-    /// <param name="type">The component type to check for.</param>
-    /// <returns><c>true</c> if the component is present; otherwise, <c>false</c>.</returns>
     public bool ContainsComponent(Type type)
     {
-      if (!_typeToBitMap.TryGetValue(type, out var bitIndex))
+      if (!TypeToBitIndex.TryGetValue(type, out var bitIndex))
         return false;
-
       var maskIndex = bitIndex / 64;
       var bitPosition = bitIndex % 64;
       return (_bitMask[maskIndex] & (1UL << bitPosition)) != 0;
     }
 
-
-    /// <summary>
-    /// Checks if this key matches another, ensuring all bits in the other key
-    /// are set in this key.
-    /// </summary>
-    /// <param name="other">The key to compare with.</param>
-    /// <returns><c>true</c> if all bits in the other key are present; otherwise, <c>false</c>.</returns>
-    public bool Matches(ComponentKey other)
-    {
-      for (int i = 0; i < _bitMask.Length; i++)
-      {
-        if ((other._bitMask[i] & _bitMask[i]) != other._bitMask[i])
-          return false;
-      }
-      return true;
-    }
-
-    /// <inheritdoc/>
     public bool Equals(ComponentKey other)
     {
-      for (int i = 0; i < _bitMask.Length; i++)
-      {
-        if (_bitMask[i] != other._bitMask[i])
-          return false;
-      }
-      return true;
+      return _bitMask.AsSpan().SequenceEqual(other._bitMask.AsSpan());
     }
 
-    public override bool Equals([NotNullWhen(true)] object obj)
+    public override bool Equals(object? obj)
     {
       return obj is ComponentKey other && Equals(other);
     }
 
     public override int GetHashCode()
     {
-      int hash = 17;
-      foreach (var value in _bitMask)
-      {
-        hash = hash * 31 + value.GetHashCode();
-      }
-      return hash;
-    }
-
-    public override string ToString()
-    {
-      return string.Join(",", _bitMask);
+      return HashCode.Combine(_bitMask[0], _bitMask[1], _bitMask[2], _bitMask[3]);
     }
 
     public static bool operator ==(ComponentKey left, ComponentKey right) => left.Equals(right);
-
     public static bool operator !=(ComponentKey left, ComponentKey right) => !(left == right);
   }
 
   /// <summary>
-  /// Manages the lifecycle of entities and their components.
-  /// Provides functionality for creating, retrieving, and removing entities.
+  /// Manages the lifecycle of entities and their components in the ECS framework.
+  /// Provides utilities for efficient creation, retrieval, and management of entities.
   /// </summary>
   public class EntityManager
   {
     private readonly Dictionary<int, EntityData> _entities = [];
-
-    private int _nextEntityId = 0;
-
-    private static readonly Lazy<EntityManager> _instance = new(() => new EntityManager());
+    private int _nextEntityId;
 
     /// <summary>
-    /// Prevents external instantiation of the EntityManager
-    /// Use <see cref="Instance"/> to access the singleton
+    /// Gets all entities managed by the EntityManager.
+    /// </summary>
+    public IEnumerable<IEntity> Entities => _entities.Values.Select(data => data.Entity);
+
+    private static readonly Lazy<EntityManager> InstanceHolder = new(() => new EntityManager());
+
+    public event Action<IEntity>? OnEntityChanged;
+
+    /// <summary>
+    /// Prevents external instantiation. Use <see cref="Instance"/> to access the singleton.
     /// </summary>
     private EntityManager() { }
 
     /// <summary>
     /// Singleton instance of the <see cref="EntityManager"/>.
     /// </summary>
-    public static EntityManager Instance => _instance.Value;
-
+    public static EntityManager Instance => InstanceHolder.Value;
 
     /// <summary>
-    /// Creates a new entity and registers it within the manager.
+    /// Creates and registers a new entity within the manager.
     /// </summary>
-    /// <returns>The newly created entity.</returns>
     public IEntity CreateEntity()
     {
       var entity = new Entity();
       var id = _nextEntityId++;
-
+      entity.OnComponentsChanged += HandleEntityChange;
       _entities[id] = new EntityData(entity, GenerateComponentKey(entity));
       return entity;
     }
 
-    public void DrawDebug(SpriteBatch spriteBatch, DynamicSpriteFont font, Mod mod)
-    {
-      foreach (var entry in _entities.Values)
-      {
-        var entity = entry.Entity;
-
-        var transform = entity.GetComponent<TransformComponent>();
-        var debugComponent = entity.GetComponent<DebugComponent>();
-
-        if (transform == null || debugComponent == null)
-          continue;
-
-        var position = transform.Position - Main.screenPosition;
-        var size = transform.Size;
-        var color = debugComponent.DebugColor;
-        var name = debugComponent.EntityName;
-
-        spriteBatch.Draw(
-          texture: TextureAssets.MagicPixel.Value,
-          destinationRectangle: new Rectangle((int)position.X, (int)position.Y, (int)size.X, (int)size.Y),
-          color: color * 0.5f
-        );
-
-        var info = $"{name}\nComponents: {string.Join(", ", entity.GetComponents().Select(t => t.Name))}";
-        spriteBatch.DrawString(font, info, position + new Vector2(5, 5), Color.White);
-      }
-    }
-
-    /// <summary>
-    /// Deletes an entity and removes it from the manager.
-    /// </summary>
-    /// <param name="entity">The entity to delete.</param>
     public void RemoveEntity(IEntity entity)
     {
-      var id = _entities.FirstOrDefault(e => e.Value.Entity == entity).Key;
-      if (id != default)
-      {
-        _entities.Remove(id);
-      }
+      var entry = _entities.FirstOrDefault(kvp => kvp.Value.Entity == entity);
+      if (entry.Key != default)
+        _entities.Remove(entry.Key);
     }
 
-    /// <summary>
-    /// Retrieves all entities that have the specified component type
-    /// </summary>
-    /// <typeparam name="T">The type of component to filter entities by</typeparam>
-    /// <returns>An enumerable of entities containing the specified component</returns>
     public IEnumerable<IEntity> GetEntitiesWithComponent<T>() where T : IComponent
     {
-      var targetType = typeof(T);
-
-      foreach (var entry in _entities.Values)
+      var type = typeof(T);
+      foreach (var (_, value) in _entities)
       {
-        if (entry.ComponentKey.ContainsComponent(targetType))
-        {
-          yield return entry.Entity;
-        }
+        if (value.ComponentKey.ContainsComponent(type))
+          yield return value.Entity;
       }
     }
 
-    /// <summary>
-    /// Recalculates the ComponentKey for a given entity after components have been modified
-    /// This ensures the entity remains correctly indexed for efficient querying
-    /// </summary>
-    /// <param name="entity">The entity to update</param>
-    public void UpdateEntityKey(IEntity entity)
+    private void HandleEntityChange(IEntity entity)
     {
-      var id = _entities.FirstOrDefault(e => e.Value.Entity == entity).Key;
-      if (id != default)
+      var entry = _entities.FirstOrDefault(kvp => kvp.Value.Entity == entity);
+      if (!entry.Equals(default(KeyValuePair<int, EntityData>)))
       {
-        _entities[id] = new EntityData(entity, GenerateComponentKey(entity));
+        var entityId = entry.Key;
+
+        var updatedKey = GenerateComponentKey(entity);
+        _entities[entityId] = new EntityData(entity, updatedKey);
+
+        OnEntityChanged?.Invoke(entity);
       }
     }
 
-    /// <summary>
-    /// Generates a unique ComponentKey for an entity based on its current set of components
-    /// This key is used to efficiently group and query entities
-    /// </summary>
-    /// <param name="entity">The entity for which to generate the key</param>
-    /// <returns>A ComponentKey representing the entity's components</returns>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private ComponentKey GenerateComponentKey(IEntity entity)
     {
-      var types = entity.GetComponents();
-      return ComponentKey.FromTypes(types);
+      return ComponentKey.FromTypes(entity.GetComponents());
     }
 
-    /// <summary>
-    /// Internal data structure to associate entities with their ComponentKeys
-    /// </summary>
     private record struct EntityData(IEntity Entity, ComponentKey ComponentKey);
   }
 }
