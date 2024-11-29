@@ -65,6 +65,7 @@ public readonly struct Identity : IEquatable<Identity>, IComparable<Identity>
     fixed (ulong* ptr = &_value)
     {
       // Unsafe manipulation to increment the generation part directly
+      // Incrementing generation directly in memory avoids additional decomposition/reconstruction of values
       nextValue = *ptr + (1UL << 32);
     }
     return new Identity(nextValue);
@@ -155,6 +156,7 @@ public readonly struct Identity : IEquatable<Identity>, IComparable<Identity>
 
   public override int GetHashCode()
   {
+    // FNV-1a Fast, well-distributed, and easy to implement.
     const ulong FnvPrime = 0x100000001b3;
     ulong hash = 0xcbf29ce484222325;
 
@@ -174,19 +176,6 @@ public readonly struct Identity : IEquatable<Identity>, IComparable<Identity>
   public static bool operator ==(Identity left, Identity right) => left.Equals(right);
 
   public static bool operator !=(Identity left, Identity right) => !left.Equals(right);
-
-  #endregion
-
-  #region Notes and Explanation
-
-  // Why unsafe in Successor?
-  // - Incrementing generation directly in memory avoids additional decomposition/reconstruction of values.
-  //
-  // Why FNV-1a hashing?
-  // - Fast, well-distributed, and easy to implement.
-  //
-  // Why bit-packing?
-  // - Compact storage and fast field extraction using bit-shifts.
 
   #endregion
 }
