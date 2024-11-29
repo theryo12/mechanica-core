@@ -1,75 +1,111 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
-using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using MechanicaCore.Core.ECS.Components;
 using MechanicaCore.Utilities;
 using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
+using ReLogic.Graphics;
+using Terraria;
+using Terraria.GameContent;
+using Terraria.ModLoader;
 
 namespace MechanicaCore.Core.ECS
 {
   /// <summary>
-  /// Represents a data-only component
-  /// Components are used to store data for entities
+  /// Represents a data-only component used to store state and attributes of an entity.
+  /// Components are the building blocks of the ECS system, containing only data 
+  /// without logic, making entities modular and reusable.
   /// </summary>
   public interface IComponent { }
 
   /// <summary>
-  /// Represents an entity that manages a collection of components
+  /// Defines an entity that manages a collection of components.
+  /// Entities are containers that aggregate components to define behavior and data.
+  /// This interface provides methods for adding, retrieving, and removing components.
   /// </summary>
   public interface IEntity
   {
     /// <summary>
-    /// Adds a component to the entity
+    /// Adds a component to the entity, replacing any existing component of the same type.
     /// </summary>
-    /// <typeparam name="T">The type of component</typeparam>
-    /// <param name="component">The instance of the component</param>
+    /// <typeparam name="T">The type of the component.</typeparam>
+    /// <param name="component">The instance of the component to add.</param>
     void AddComponent<T>(T component) where T : IComponent;
 
     /// <summary>
-    /// Retrieves a component from the entity
+    /// Retrieves a specific component from the entity, if it exists.
     /// </summary>
-    /// <typeparam name="T">The type of component</typeparam>
-    /// <returns>The component instance, if it exists</returns>
+    /// <typeparam name="T">The type of the component.</typeparam>
+    /// <returns>The component instance, or <c>null</c> if not present.</returns>
     T? GetComponent<T>() where T : IComponent;
 
     /// <summary>
-    /// Retrieves the types of all components currently associated with this entity.
+    /// Retrieves the types of all components currently associated with the entity.
     /// </summary>
-    /// <returns>An enumerable of component types.</returns>
+    /// <returns>An enumerable collection of component types.</returns>
     IEnumerable<Type> GetComponents();
 
     /// <summary>
-    /// Removes a component from the entity
+    /// Removes a specific component from the entity, if it exists.
     /// </summary>
-    /// <typeparam name="T">The type of the component</typeparam>
+    /// <typeparam name="T">The type of the component to remove.</typeparam>
     void RemoveComponent<T>() where T : IComponent;
+
+    /// <summary>
+    /// Gets or sets all components of the entity in bulk.
+    /// Replacing components will overwrite the current set of components.
+    /// </summary>
+    IEnumerable<IComponent> Components { get; set; }
   }
 
   /// <summary>
-  /// Represents a system that processes entities with specific components
+  /// Represents a system that operates on entities containing specific components.
+  /// Systems encapsulate logic for processing entities in the ECS framework.
   /// </summary>
   public interface ISystem
   {
     void Update(GameTime gameTime);
   }
 
+  /// <summary>
+  /// Represents a component that supports serialization and deserialization
+  /// for network communication. This enables synchronization of component states
+  /// across the server and clients in multiplayer environments.
+  /// </summary>
+  public interface INetSerializableComponent : IComponent
+  {
+    /// <summary>
+    /// Serializes the component's state into a binary stream.
+    /// Use this method to write all required fields for reconstructing the component
+    /// during deserialization. This is typically used when sending data to clients.
+    /// </summary>
+    /// <param name="writer">A <see cref="BinaryWriter"/> used to write the component's data.</param>
+    void Serialize(BinaryWriter writer);
+
+    /// <summary>
+    /// Deserializes the component's state from a binary stream.
+    /// Use this method to restore the component's state using data received over the network.
+    /// Ensure the deserialization order matches the serialization logic.
+    /// </summary>
+    /// <param name="reader">A <see cref="BinaryReader"/> used to read the component's data.</param>
+    void Deserialize(BinaryReader reader);
+  }
+
 
   /// <summary>
-  /// Represents an entity in the ECS system
-  /// Entities are containers for components that define their behavior and data
+  /// Represents a basic entity implementation in the ECS system.
+  /// Entities are containers for components, defining their data and behavior.
   /// </summary>
   public class Entity : IEntity
   {
     // stores components using their type as the key for quick lookup
     private readonly Dictionary<Type, object> _components = [];
 
-    /// <summary>
-    /// Gets or sets the components of the entity in bulk.
-    /// Setting this property will replace all existing components.
-    /// </summary>
+    /// <inheritdoc/>
     public IEnumerable<IComponent> Components
     {
       get => _components.Values.Cast<IComponent>();
@@ -79,18 +115,13 @@ namespace MechanicaCore.Core.ECS
 
         foreach (var component in value)
         {
-          AddComponent(component);
+          var componentType = component.GetType();
+          _components[componentType] = component;
         }
       }
     }
 
-    /// <summary>
-    /// Adds a component to this entity.
-    /// If a component of the same type already exists, it will be replaced
-    /// </summary>
-    /// <typeparam name="T">The type of component you're adding</typeparam>
-    /// <param name="component">The actual component instance to add</param>
-    /// <exception cref="ArgumentNullException">Thrown if the component is null</exception>
+    /// <inheritdoc/>
     public void AddComponent<T>(T component) where T : IComponent
     {
       SafeCheck.EnsureNotNull(component, nameof(component));
@@ -98,12 +129,7 @@ namespace MechanicaCore.Core.ECS
       _components[typeof(T)] = component;
     }
 
-    /// <summary>
-    /// Retrieves a component of specific type from this entity
-    /// If the component isn't found, returns null
-    /// </summary>
-    /// <typeparam name="T">The type of component you're looking for</typeparam>
-    /// <returns>The component if it exists, or null if it doesn't</returns>
+    /// <inheritdoc/>
     public T? GetComponent<T>() where T : IComponent
     {
       if (_components.TryGetValue(typeof(T), out var component))
@@ -112,20 +138,13 @@ namespace MechanicaCore.Core.ECS
       return default;
     }
 
-    /// <summary>
-    /// Retrieves the types of all components currently associated with this entity.
-    /// </summary>
-    /// <returns>An enumerable of component types.</returns>
+    /// <inheritdoc/>
     public IEnumerable<Type> GetComponents()
     {
       return _components.Keys;
     }
 
-    /// <summary>
-    /// Removes a component of specific type from this entity
-    /// If entity doesn't have that component, nothing happens
-    /// </summary>
-    /// <typeparam name="T">The type of component you want to remove</typeparam>
+    /// <inheritdoc/>
     public void RemoveComponent<T>() where T : IComponent
     {
       _components.Remove(typeof(T));
@@ -133,8 +152,9 @@ namespace MechanicaCore.Core.ECS
   }
 
   /// <summary>
-  /// Represents a unique indentifier for a set of components
-  /// Used to organize entities into efficient processing groups
+  /// Represents a unique identifier for a set of components.
+  /// This structure is used to efficiently group and query entities
+  /// with specific combinations of components.
   /// </summary>
   public struct ComponentKey : IEquatable<ComponentKey>
   {
@@ -144,20 +164,16 @@ namespace MechanicaCore.Core.ECS
     // the actual bitmask data
     private readonly ulong[] _bitMask;
 
-    /// <summary>
-    /// Initializes a new ComponentKey with the specified bitmask data
-    /// </summary>
-    /// <param name="bitMask">The bitmask data representing this key</param>
     private ComponentKey(ulong[] bitMask)
     {
       _bitMask = bitMask;
     }
 
     /// <summary>
-    /// Generates a ComponentKey for the specified component types
+    /// Creates a unique <see cref="ComponentKey"/> for the specified component types.
     /// </summary>
-    /// <param name="types">The types of components to include in the key</param>
-    /// <returns>A unique key representing the combination of components</returns>
+    /// <param name="types">The types of components to include in the key.</param>
+    /// <returns>A <see cref="ComponentKey"/> representing the specified components.</returns>
     public static ComponentKey FromTypes(IEnumerable<Type> types)
     {
       var bitMask = new ulong[4]; // up to 256 component types
@@ -179,10 +195,10 @@ namespace MechanicaCore.Core.ECS
     }
 
     /// <summary>
-    /// Checks if this key contains the specified component type
+    /// Determines if this key contains the specified component type.
     /// </summary>
-    /// <param name="type">The type of the component to check</param>
-    /// <returns>True if the component is represented in the key; otherwise, false</returns>
+    /// <param name="type">The component type to check for.</param>
+    /// <returns><c>true</c> if the component is present; otherwise, <c>false</c>.</returns>
     public bool ContainsComponent(Type type)
     {
       if (!_typeToBitMap.TryGetValue(type, out var bitIndex))
@@ -195,10 +211,11 @@ namespace MechanicaCore.Core.ECS
 
 
     /// <summary>
-    /// Checks if this key matches another, meaning all bits in the other key are set in this key
+    /// Checks if this key matches another, ensuring all bits in the other key
+    /// are set in this key.
     /// </summary>
-    /// <param name="other">The key to check against</param>
-    /// <returns>True if this keys contains all bits in the other key; otherwise, false</returns>
+    /// <param name="other">The key to compare with.</param>
+    /// <returns><c>true</c> if all bits in the other key are present; otherwise, <c>false</c>.</returns>
     public bool Matches(ComponentKey other)
     {
       for (int i = 0; i < _bitMask.Length; i++)
@@ -209,11 +226,7 @@ namespace MechanicaCore.Core.ECS
       return true;
     }
 
-    /// <summary>
-    /// Compares this key to another for equality
-    /// </summary>
-    /// <param name="other">The other key to compare</param>
-    /// <returns>True if the keys are equal; otherwise, false</returns>
+    /// <inheritdoc/>
     public bool Equals(ComponentKey other)
     {
       for (int i = 0; i < _bitMask.Length; i++)
@@ -250,7 +263,8 @@ namespace MechanicaCore.Core.ECS
   }
 
   /// <summary>
-  /// Manages entities and their components
+  /// Manages the lifecycle of entities and their components.
+  /// Provides functionality for creating, retrieving, and removing entities.
   /// </summary>
   public class EntityManager
   {
@@ -266,14 +280,16 @@ namespace MechanicaCore.Core.ECS
     /// </summary>
     private EntityManager() { }
 
+    /// <summary>
+    /// Singleton instance of the <see cref="EntityManager"/>.
+    /// </summary>
     public static EntityManager Instance => _instance.Value;
 
 
     /// <summary>
-    /// Creates a new entity and registers it within the manager
-    /// The entity starts with no components, but they can be added later
+    /// Creates a new entity and registers it within the manager.
     /// </summary>
-    /// <returns>A newly created entity</returns>
+    /// <returns>The newly created entity.</returns>
     public IEntity CreateEntity()
     {
       var entity = new Entity();
@@ -283,10 +299,38 @@ namespace MechanicaCore.Core.ECS
       return entity;
     }
 
+    public void DrawDebug(SpriteBatch spriteBatch, DynamicSpriteFont font, Mod mod)
+    {
+      foreach (var entry in _entities.Values)
+      {
+        var entity = entry.Entity;
+
+        var transform = entity.GetComponent<TransformComponent>();
+        var debugComponent = entity.GetComponent<DebugComponent>();
+
+        if (transform == null || debugComponent == null)
+          continue;
+
+        var position = transform.Position - Main.screenPosition;
+        var size = transform.Size;
+        var color = debugComponent.DebugColor;
+        var name = debugComponent.EntityName;
+
+        spriteBatch.Draw(
+          texture: TextureAssets.MagicPixel.Value,
+          destinationRectangle: new Rectangle((int)position.X, (int)position.Y, (int)size.X, (int)size.Y),
+          color: color * 0.5f
+        );
+
+        var info = $"{name}\nComponents: {string.Join(", ", entity.GetComponents().Select(t => t.Name))}";
+        spriteBatch.DrawString(font, info, position + new Vector2(5, 5), Color.White);
+      }
+    }
+
     /// <summary>
-    /// Removes an entity from the manager, including all of its associated components
+    /// Deletes an entity and removes it from the manager.
     /// </summary>
-    /// <param name="entity">The entity to remove</param>
+    /// <param name="entity">The entity to delete.</param>
     public void RemoveEntity(IEntity entity)
     {
       var id = _entities.FirstOrDefault(e => e.Value.Entity == entity).Key;
