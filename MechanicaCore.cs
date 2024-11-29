@@ -63,17 +63,5 @@ namespace MechanicaCore
 		{
 			MechanicaCore.SystemManager.UpdateAll(new GameTime());
 		}
-
-		public override void OnWorldLoad()
-		{
-			var entityManager = EntityManager.Instance;
-
-			var entity = entityManager.CreateEntity();
-			entity.Components =
-			[
-				new TransformComponent(new Vector2(Main.spawnTileX * 16, Main.spawnTileY * 16), new Vector2(1000, 1000)),
-				new DebugComponent("TestEntity", Color.Red)
-			];
-		}
 	}
 }

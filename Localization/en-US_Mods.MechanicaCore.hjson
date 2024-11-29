@@ -9,4 +9,8 @@ Configs: {
 	}
 }
 
-Keybinds.QuestMenuToggle.DisplayName: Quest Menu Toggle
+Keybinds: {
+	QuestMenuToggle.DisplayName: Quest Menu Toggle
+	AdditionalDebug.DisplayName: Additional Debug
+	Debug.DisplayName: Debug
+}
