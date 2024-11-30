@@ -1,9 +1,8 @@
 using System;
-using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
-namespace MechanicaCore.core.ecs;
+namespace aether.expressions;
 
 /// <summary>
 /// Represents a compact, highly efficient unique identifier.
@@ -125,7 +124,7 @@ public readonly struct Identity : IEquatable<Identity>, IComparable<Identity>
   /// <summary>
   /// Represents a compact, immutable type identifier.
   /// </summary>
-  [StructLayout(LayoutKind.Sequential)]
+  [StructLayout(LayoutKind.Auto)]
   public readonly struct TypeID(ushort value) : IEquatable<TypeID>
   {
     public readonly ushort Value = value;
