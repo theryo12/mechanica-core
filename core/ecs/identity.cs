@@ -34,9 +34,6 @@ public readonly struct Identity : IEquatable<Identity>, IComparable<Identity>
 
   #region Constructors
 
-  /// <summary>
-  /// Constructs a new identity.
-  /// </summary>
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
   public Identity(uint index, ushort generation, ushort typeId)
   {
