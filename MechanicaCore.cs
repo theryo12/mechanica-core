@@ -20,7 +20,7 @@ public class MechanicaDebugger : ModSystem
       var id = new Identity(1, 2, 3);
       TestRunner.AssertEqual(1u, id.Index, "Index should be 1.");
       TestRunner.AssertEqual((ushort)2, id.Generation, "Generation should be 2.");
-      TestRunner.AssertEqual((short)3, id.TypeId, "TypeId should be 3.");
+      TestRunner.AssertEqual((short)3, id.TypeID, "TypeId should be 3.");
     });
 
     runner.AddTest("Identity Successor Test", () =>
@@ -29,7 +29,7 @@ public class MechanicaDebugger : ModSystem
       var successor = id.Successor();
       TestRunner.AssertEqual((ushort)3, successor.Generation, "Generation should increment by 1.");
       TestRunner.AssertEqual(1u, successor.Index, "Index should remain the same.");
-      TestRunner.AssertEqual((short)3, successor.TypeId, "TypeId should remain the same.");
+      TestRunner.AssertEqual((short)3, successor.TypeID, "TypeId should remain the same.");
     });
 
     runner.AddTest("Equality Test", () =>

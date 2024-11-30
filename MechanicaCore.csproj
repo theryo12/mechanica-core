@@ -6,6 +6,7 @@
 	<!-- General -->
 	<PropertyGroup>
 		 <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		 <Nullable>enable</Nullable>
 	</PropertyGroup>
 
 	<!-- References -->

@@ -13,9 +13,9 @@ public readonly struct Identity : IEquatable<Identity>, IComparable<Identity>
 {
   [FieldOffset(0)] private readonly ulong _value;
 
-  [FieldOffset(0)] private readonly uint _index;       // 32 bits
-  [FieldOffset(4)] private readonly ushort _generation; // 16 bits
-  [FieldOffset(6)] private readonly short _typeId;     // 16 bits
+  [FieldOffset(0)] private readonly uint _index;         // 32 bits
+  [FieldOffset(4)] private readonly ushort _generation;  // 16 bits
+  [FieldOffset(6)] private readonly ushort _typeId;      // 16 bits
 
   /// <summary>
   /// The index component.
@@ -30,7 +30,7 @@ public readonly struct Identity : IEquatable<Identity>, IComparable<Identity>
   /// <summary>
   /// The type identifier component.
   /// </summary>
-  public short TypeId => _typeId;
+  public ushort TypeId => _typeId;
 
   #region Constructors
 
@@ -38,9 +38,9 @@ public readonly struct Identity : IEquatable<Identity>, IComparable<Identity>
   /// Constructs a new identity.
   /// </summary>
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  public Identity(uint index, ushort generation, short typeId)
+  public Identity(uint index, ushort generation, ushort typeId)
   {
-    _value = (ulong)index | ((ulong)generation << 32) | ((ulong)(ushort)typeId << 48);
+    _value = (ulong)index | ((ulong)generation << 32) | ((ulong)typeId << 48);
   }
 
   /// <summary>
@@ -59,14 +59,13 @@ public readonly struct Identity : IEquatable<Identity>, IComparable<Identity>
   public unsafe Identity Successor()
   {
     if (Generation == ushort.MaxValue)
-      throw new InvalidOperationException("Maximum generation reached.");
+      throw new InvalidOperationException("Maximum generation reached. Identity generation cannot be incremented beyond its limit.");
 
     ulong nextValue;
     fixed (ulong* ptr = &_value)
     {
       // Unsafe manipulation to increment the generation part directly
-      // Incrementing generation directly in memory avoids additional decomposition/reconstruction of values
-      nextValue = *ptr + (1UL << 32);
+      nextValue = *ptr + (1UL << 32); // Incrementing the generation part by one
     }
     return new Identity(nextValue);
   }
@@ -80,7 +79,7 @@ public readonly struct Identity : IEquatable<Identity>, IComparable<Identity>
   public unsafe void Serialize(Span<byte> buffer)
   {
     if (buffer.Length < sizeof(ulong))
-      throw new ArgumentException("Buffer too small.");
+      throw new ArgumentException($"Buffer size is insufficient. Expected size: {sizeof(ulong)}, received: {buffer.Length}.", nameof(buffer));
 
     fixed (byte* ptr = buffer)
     {
@@ -91,7 +90,7 @@ public readonly struct Identity : IEquatable<Identity>, IComparable<Identity>
   public static unsafe Identity Deserialize(ReadOnlySpan<byte> buffer)
   {
     if (buffer.Length < sizeof(ulong))
-      throw new ArgumentException("Buffer too small.");
+      throw new ArgumentException($"Buffer size is insufficient. Expected size: {sizeof(ulong)}, received: {buffer.Length}.", nameof(buffer));
 
     fixed (byte* ptr = buffer)
     {
@@ -115,9 +114,10 @@ public readonly struct Identity : IEquatable<Identity>, IComparable<Identity>
       return new Identity(combined);
     }
   }
-  public static unsafe Identity CreateUnsafe(uint index, ushort generation, short typeId)
+
+  public static unsafe Identity CreateUnsafe(uint index, ushort generation, ushort typeId)
   {
-    ulong value = index | ((ulong)generation << 32) | ((ulong)(ushort)typeId << 48);
+    ulong value = index | ((ulong)generation << 32) | ((ulong)typeId << 48);
     return *(Identity*)&value; // Direct pointer dereferencing
   }
 
@@ -156,7 +156,7 @@ public readonly struct Identity : IEquatable<Identity>, IComparable<Identity>
 
   public override int GetHashCode()
   {
-    // FNV-1a Fast, well-distributed, and easy to implement.
+    // FNV-1a fast, well-distributed, and easy to implement
     const ulong FnvPrime = 0x100000001b3;
     ulong hash = 0xcbf29ce484222325;
 
