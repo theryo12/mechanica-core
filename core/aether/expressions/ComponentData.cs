@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -23,77 +24,78 @@ public unsafe struct ComponentData(uint sizeInBytes, byte alignment)
   public uint DataLength = 0;
 
   /// <summary>
-  /// The raw component data stored in a byte array.
+  /// The memory block that holds the component's data.
   /// </summary>
-  public byte* Data = null;
+  private Memory<byte> _data = Memory<byte>.Empty;
 
   /// <summary>
-  /// The mapping of entity ID to the location of the component's data.
+  /// The mapping of entity ID to the location of data in the memory block.
   /// </summary>
-  public uint* Sparse = null;
+  private Memory<uint> _sparse = Memory<uint>.Empty;
 
   public void AllocateData()
   {
-    // use fixed size buffers to avoid gc allocation
-    Data = (byte*)Marshal.AllocHGlobal((int)SizeInBytes);
-    Sparse = (uint*)Marshal.AllocHGlobal((int)(sizeof(uint) * DataLength));
+    // use arraypool to rent memory
+    _data = ArrayPool<byte>.Shared.Rent((int)SizeInBytes);
+    _sparse = ArrayPool<uint>.Shared.Rent((int)DataLength);
   }
 
   public void FreeData()
   {
-    if (Data != null)
+    if (_data.Length > 0)
     {
-      Marshal.FreeHGlobal((IntPtr)Data);
-      Data = null;
+      ArrayPool<byte>.Shared.Return(_data.Span.ToArray()); // return the rented memory
+      _data = Memory<byte>.Empty;
     }
 
-    if (Sparse != null)
+    if (_sparse.Length > 0)
     {
-      Marshal.FreeHGlobal((IntPtr)Sparse);
-      Sparse = null;
+      ArrayPool<uint>.Shared.Return(_sparse.Span.ToArray());
+      _sparse = Memory<uint>.Empty;
     }
   }
 
-  /// <summary>
-  /// Sets a value at the specified entity location in the sparse array.
-  /// </summary>
-  /// <param name="entityId">The ID of the entity.</param>
-  /// <param name="dataLocation">The location of the data for this entity.</param>
   public void SetEntityDataLocation(uint entityId, uint dataLocation)
   {
-    Sparse[entityId] = dataLocation;
+    if (entityId < DataLength)
+    {
+      _sparse.Span[(int)entityId] = dataLocation;
+    }
+    else
+    {
+      throw new ArgumentOutOfRangeException(nameof(entityId), "Entity ID is out of bounds.");
+    }
+  }
+
+  private uint GetDataLocation(uint entityId)
+  {
+    uint dataLocation = _sparse.Span[(int)entityId];
+
+    if (dataLocation == 0)
+      throw new InvalidOperationException("Invalid entity ID.");
+
+    return dataLocation;
   }
 
   /// <summary>
-  /// Gets a value from the data array using the entity's ID and offset.
+  /// Indexer for accessing component data using entity ID and offset.
   /// </summary>
-  /// <param name="entityId">The ID of the entity.</param>
-  /// <param name="offset">The offset in the component data.</param>
+  /// <param name="entityId">The ID of entity.</param>
+  /// <param name="offset">The offset within the component's data.</param>
   /// <returns>The byte value at the specified location.</returns>
-  public byte GetValue(uint entityId, uint offset)
+  public byte this[uint entityId, uint offset]
   {
-    uint dataLocation = Sparse[entityId];
-
-    if (dataLocation == 0)
-      throw new InvalidOperationException("Invalid entity ID.");
-
-    return *(Data + dataLocation + offset);
+    get
+    {
+      uint dataLocation = GetDataLocation(entityId);
+      return _data.Span[(int)(dataLocation + offset)];
+    }
+    set
+    {
+      uint dataLocation = GetDataLocation(entityId);
+      _data.Span[(int)(dataLocation + offset)] = value;
+    }
   }
 
-  /// <summary>
-  /// Sets a value at a specific location in the data.
-  /// </summary>
-  /// <param name="entityId">The entity ID for the data.</param>
-  /// <param name="offset">The offset within the component data.</param>
-  /// <param name="value">The value to set.</param>
-  public void SetValue(uint entityId, uint offset, byte value)
-  {
-    uint dataLocation = Sparse[entityId];
-
-    if (dataLocation == 0)
-      throw new InvalidOperationException("Invalid entity ID.");
-
-    *(Data + dataLocation + offset) = value;
-  }
 }
 
