@@ -1,103 +1,48 @@
 using System;
-using System.Buffers;
 
-namespace aether.expressions;
-public unsafe struct ComponentData(uint sizeInBytes, byte alignment)
+namespace Aether.Expressions;
+
+public struct ComponentData<T>(uint size) where T : unmanaged
 {
   /// <summary>
-  /// The alignment of the component in memory.
+  /// Raw data block.
   /// </summary>
-  public byte Alignment = alignment;
+  private T[] _data = new T[size];
 
   /// <summary>
-  /// The size of the component in bytes, including padding.
+  /// Sparse array mapping of entity ID to the location of data.
   /// </summary>
-  public uint SizeInBytes = sizeInBytes;
+  private readonly uint[] _sparse = new uint[size];
 
-  /// <summary>
-  /// The length of component's data (in terms of the number of items).
-  /// </summary>
-  public uint DataLength = 0;
-
-  /// <summary>
-  /// The memory block that holds the component's data
-  /// </summary>
-  private byte[]? _data = null;
-
-  /// <summary>
-  /// The mapping of entity ID to the location of data in the memory block 
-  /// </summary>
-  private uint[]? _sparse = null;
-
-  public void AllocateData()
+  public void AllocateData(uint size)
   {
-    // use ArrayPool to rent memory
-    _data = ArrayPool<byte>.Shared.Rent((int)SizeInBytes);
-    _sparse = ArrayPool<uint>.Shared.Rent((int)DataLength);
+    _data = new T[size];
   }
 
-  public void FreeData()
+  public void ResizeData(uint newSize)
   {
-    if (_data != null)
-    {
-      ArrayPool<byte>.Shared.Return(_data, clearArray: true);
-      _data = null;
-    }
-
-    if (_sparse != null)
-    {
-      ArrayPool<uint>.Shared.Return(_sparse, clearArray: true);
-      _sparse = null;
-    }
+    Array.Resize(ref _data, (int)newSize);
   }
 
-  public readonly void SetEntityDataLocation(uint entityId, uint dataLocation)
+  public readonly void SetEntityDataLocation(uint entityId, uint location)
   {
-    if (_sparse == null)
-      throw new InvalidOperationException("Sparse array is not allocated.");
+    if (entityId >= _sparse.Length)
+      throw new ArgumentOutOfRangeException(nameof(entityId));
 
-    if (entityId >= DataLength)
-      throw new ArgumentOutOfRangeException(nameof(entityId), "Entity ID is out of bounds.");
-
-    _sparse[(int)entityId] = dataLocation;
+    _sparse[entityId] = location;
   }
 
-  private readonly uint GetDataLocation(uint entityId)
-  {
-    if (_sparse == null)
-      throw new InvalidOperationException("Sparse array is not allocated.");
-
-    uint dataLocation = _sparse[(int)entityId];
-
-    if (dataLocation == 0)
-      throw new InvalidOperationException("Invalid entity ID.");
-
-    return dataLocation;
-  }
-
-  /// <summary>
-  /// Indexer for accessing component data using entity ID and offset.
-  /// </summary>
-  /// <param name="entityId">The ID of entity.</param>
-  /// <param name="offset">The offset within the component's data.</param>
-  /// <returns>The byte value at the specified location.</returns>
-  public readonly byte this[uint entityId, uint offset]
+  public readonly T this[uint entityId, uint offset]
   {
     get
     {
-      if (_data == null)
-        throw new InvalidOperationException("Data array is not allocated.");
-
-      uint dataLocation = GetDataLocation(entityId);
-      return _data[dataLocation + offset];
+      uint location = _sparse[entityId];
+      return _data[location + offset];
     }
     set
     {
-      if (_data == null)
-        throw new InvalidOperationException("Data array is not allocated.");
-
-      uint dataLocation = GetDataLocation(entityId);
-      _data[dataLocation + offset] = value;
+      uint location = _sparse[entityId];
+      _data[location + offset] = value;
     }
   }
 }

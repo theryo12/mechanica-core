@@ -2,7 +2,7 @@ using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
-namespace aether.expressions;
+namespace Aether.Expressions;
 
 /// <summary>
 /// Represents a compact, highly efficient unique identifier.
