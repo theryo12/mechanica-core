@@ -1,4 +1,3 @@
-using MechanicaCore.core.ecs;
 using MechanicaCore.core.utils;
 using Terraria.ModLoader;
 
